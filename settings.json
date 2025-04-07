@@ -1,0 +1,7 @@
+{
+  "search": {
+    "mode": "dll",
+    "api_endpoint": "http://localhost:5000/everything-search-api/search",
+    "dll_path": "Everything32.dll"
+  }
+}

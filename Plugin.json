@@ -1,0 +1,8 @@
+{
+  "id": "FMANEverything",
+  "name": "Everything Search",
+  "version": "1.0.0",
+  "author": "User",
+  "description": "Use Everything search in fman to quickly find files",
+  "api_version": 1
+}
