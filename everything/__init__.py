@@ -840,10 +840,8 @@ class EverythingOpenListener(DirectoryPaneListener):
                         # More general extraction
                         parts = path.split('/')
                         # The last non-empty part should be the index
-                        show_alert(f"parts: {parts}")
                         index_str = next((p for p in reversed(parts) if p), None)
                         if index_str and index_str.isdigit():
-                            show_alert(f"Extracted index: '{index_str}'")
                             index = int(index_str)
                         else:
                             return None
@@ -857,7 +855,6 @@ class EverythingOpenListener(DirectoryPaneListener):
                             file_path = item['path']
                             if os.path.isdir(file_path):
                                 # Navigate to the directory
-                                show_alert(f"Opening directory: {file_path}")
                                 self.pane.set_path(as_url(file_path))
                                 return True
                             else:
@@ -887,10 +884,8 @@ class EverythingOpenListener(DirectoryPaneListener):
                                 
                                 # Return a command to open the parent directory
                                 logger.info(f"Navigating to parent directory: {parent_dir}")
-                                show_alert(f"Opening parent directory: {parent_dir}")
                                 return 'open_directory', {'url': as_url(parent_dir)}
                     except (ValueError, IndexError, KeyError) as e:
-                        show_alert(f"Error handling open_file: {str(e)}")
                         logger.error(f"Error handling open_file: {str(e)}")
         return None
     
