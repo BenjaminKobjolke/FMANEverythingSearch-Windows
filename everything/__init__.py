@@ -363,34 +363,44 @@ def search_everything(query):
     else:
         return search_everything_api(query)
 
+def _set_everything_path(pane_command):
+    """
+    Prompts the user for a search term and sets the path for the Everything file system.
+    
+    Args:
+        pane_command: The DirectoryPaneCommand object.
+    """
+    # Show prompt to enter search term
+    search_term, ok = show_prompt('Enter search term (minimum 3 characters)', default='')
+    
+    # Check if user cancelled or entered a valid search term
+    if not ok:
+        logger.info("User cancelled search prompt")
+        return  # User cancelled
+    
+    logger.info(f"User entered search term: '{search_term}'")
+    
+    if len(search_term) < 3:
+        logger.warning(f"Search term too short: '{search_term}'")
+        return
+    
+    # URL encode the search term to handle special characters like colons
+    encoded_search_term = urllib.parse.quote(search_term)
+    logger.info(f"Encoded search term: '{encoded_search_term}'")
+    
+    # Set the path to our custom file system with the encoded search term as a parameter
+    # Use a slash instead of a question mark
+    pane_command.pane.set_path(f"everything:///{encoded_search_term}")
+    logger.info(f"Set path to everything:///{encoded_search_term}")
+    return True
+
 class Everything(DirectoryPaneCommand):
     def __call__(self):
         # Show the log file path
         log_file = os.path.join(tempfile.gettempdir(), 'fman_everything.log')
         logger.info("Everything plugin started")
         
-        # Show prompt to enter search term
-        search_term, ok = show_prompt('Enter search term (minimum 3 characters)', default='')
-        
-        # Check if user cancelled or entered a valid search term
-        if not ok:
-            logger.info("User cancelled search prompt")
-            return  # User cancelled
-        
-        logger.info(f"User entered search term: '{search_term}'")
-        
-        if len(search_term) < 3:
-            logger.warning(f"Search term too short: '{search_term}'")
-            return
-        
-        # URL encode the search term to handle special characters like colons
-        encoded_search_term = urllib.parse.quote(search_term)
-        logger.info(f"Encoded search term: '{encoded_search_term}'")
-        
-        # Set the path to our custom file system with the encoded search term as a parameter
-        # Use a slash instead of a question mark
-        self.pane.set_path(f"everything:///{encoded_search_term}")
-        logger.info(f"Set path to everything:///{encoded_search_term}")
+        _set_everything_path(self)
 
 class EverythingFS(FileSystem):
     scheme = 'everything://'
@@ -831,8 +841,8 @@ class EverythingOpenListener(DirectoryPaneListener):
                 if scheme == 'everything://':
                     # Handle placeholder item
                     if path == 'placeholder' or path == '/placeholder':
-                        # Do nothing when clicking on the placeholder
-                        return False
+                        _set_everything_path(self)
+                        return
                     
                     index:int = 0
 
