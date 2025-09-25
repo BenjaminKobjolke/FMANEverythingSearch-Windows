@@ -12,13 +12,15 @@ A [fman](https://fman.io) plugin that integrates with [Everything](https://www.v
 ## Requirements
 
 - [Everything](https://www.voidtools.com/) must be installed and running
-- The Everything API server must be running at `http://localhost:5000/everything-search-api/search`
 
 ## Installation
 
 1. Install the plugin from fman's [Plugin Repository](https://fman.io/docs/plugins)
 2. Make sure Everything is installed and running
-3. Make sure the Everything API server is running
+
+**(Optional) Using the API Server:**
+
+If you prefer to use the Everything API server instead of the bundled DLL for searching, you can install it from [https://github.com/BenjaminKobjolke/everything-api](https://github.com/BenjaminKobjolke/everything-api). Ensure the API server is running before using the plugin. You may need to configure the plugin settings to point to the API endpoint.
 
 ## Usage
 

@@ -916,17 +916,22 @@ class EverythingOpenListener(DirectoryPaneListener):
         # Get the current path
         current_path = self.pane.get_path()
         scheme, path = splitscheme(current_path)
-        
+
         # Check if we're navigating back to the search results
         if scheme == 'everything://':
             # Check if there's a stored file path
             fs = get_everything_fs()
-            if fs._last_selected_file:
-                #file_hash = hash(fs._last_selected_file)
-                #file_url = as_url(str(file_hash))   
-                # Encode the search term to handle special characters like colons
-                encoded_search_term = urllib.parse.quote(fs._current_search_term)
-                file_url = "everything:///" + encoded_search_term + "//" + str(fs._last_selected_index)        
-                self.pane.place_cursor_at(file_url)
-                #self.pane.select([file_url])
-                pass
+            if fs._last_selected_file and fs._last_selected_index >= 0:
+                try:
+                    # Construct the file URL to match the format returned by iterdir
+                    # The format should be: everything:///search_term/index
+                    encoded_search_term = urllib.parse.quote(fs._current_search_term)
+                    file_url = f"everything:///{encoded_search_term}/{fs._last_selected_index}"
+                    logger.info(f"Attempting to place cursor at: {file_url}")
+                    self.pane.place_cursor_at(file_url)
+                except ValueError as e:
+                    # If the file is not in the list, just ignore the error
+                    logger.warning(f"Could not place cursor at {file_url}: {str(e)}")
+                except Exception as e:
+                    # Log any other errors but don't crash
+                    logger.error(f"Error placing cursor: {str(e)}")
