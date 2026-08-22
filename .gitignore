@@ -172,3 +172,6 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Temporary commit message
+tmp/commit_msg.tmp
