@@ -175,3 +175,9 @@ cython_debug/
 
 # Temporary commit message
 tmp/commit_msg.tmp
+
+# AI working files
+.claude/
+/PLAN_*.md
+PLAN.md
+HANDOFF.md
