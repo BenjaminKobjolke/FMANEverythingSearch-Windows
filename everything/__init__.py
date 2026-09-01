@@ -1,26 +1,43 @@
 import os
 import json
+import threading
 import urllib.request
 import urllib.parse
 import urllib.error
 import logging
 import tempfile
-from fman import DirectoryPaneCommand, DirectoryPaneListener, show_alert, show_prompt
+from fman import DirectoryPaneCommand, DirectoryPaneListener, show_alert, \
+    show_prompt, show_status_message, clear_status_message
 from fman.fs import FileSystem, Column, cached
 from fman.url import as_url, splitscheme, basename, dirname
 from datetime import datetime
 
-# Set up logging in the system's temporary directory
+# Set up logging in the system's temporary directory.
+# basicConfig() is NOT usable here: fman configures the root logger before plugins
+# import, so basicConfig() is a silent no-op and the log file is never created.
+# Attach our own handler instead, and don't propagate into fman's own log.
 log_file = os.path.join(tempfile.gettempdir(), 'fman_everything.log')
-logging.basicConfig(filename=log_file, level=logging.DEBUG, 
-                    format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('everything')
+logger.setLevel(logging.DEBUG)
+logger.propagate = False
+if not logger.handlers:
+    try:
+        _handler = logging.FileHandler(log_file, encoding='utf-8')
+        _handler.setFormatter(
+            logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        )
+        logger.addHandler(_handler)
+    except OSError:
+        # A locked or unwritable temp file must not stop the plugin from loading.
+        pass
 logger.info('Everything plugin initialized')
 
 # Default settings
 DEFAULT_API_ENDPOINT = "http://localhost:5000/everything-search-api/search"
 DEFAULT_SEARCH_MODE = "dll"
-DEFAULT_DLL_PATH = "Everything32.dll"
+# Must match the bitness of the Python that fman ships (64-bit). A 32-bit default
+# here means a missing settings.json silently produces WinError 193 on load.
+DEFAULT_DLL_PATH = "Everything64.dll"
 
 # Read settings from settings.ini if available
 def read_settings():
@@ -129,6 +146,116 @@ class Error:
         }
         return error_messages.get(code, f"Unknown error code: {code}")
 
+def _clean(text):
+    """
+    Replace angle brackets: show_alert goes through QMessageBox, which auto-detects
+    rich text, so a wrapped urllib error like "<urlopen error [WinError 10061] ...>"
+    would be parsed as an unknown HTML tag and vanish from the dialog entirely.
+
+    Line breaks are deliberately preserved. QMessageBox sizes a plain-text dialog to
+    its longest line; one long paragraph makes it word-wrap into a tall, narrow
+    column, so messages are written as short explicit lines. `_one_line()` flattens
+    them again for the pane, which renders single-line cells.
+    """
+    return str(text).strip().replace('<', '[').replace('>', ']')
+
+def _one_line(text):
+    """Collapse a message to a single line, for rendering in a table cell."""
+    return ' '.join(str(text).split())
+
+class Timeout(Exception):
+    """A call into the Everything DLL did not return in time."""
+
+class SearchUnavailable(Exception):
+    """
+    A search could not be performed. Both strings are finished, user-facing text:
+    `headline` says what is wrong, `remedy` says what to do about it. They are
+    rendered as the Name and Path cells of the single row shown in the pane.
+    """
+    def __init__(self, headline, remedy=""):
+        super().__init__(headline)
+        self.headline = _one_line(_clean(headline))
+        self.remedy = _clean(remedy)
+
+    @property
+    def alert_text(self):
+        """Multi-line text for show_alert."""
+        return f"{self.headline}\n\n{self.remedy}" if self.remedy else self.headline
+
+    @property
+    def cell_remedy(self):
+        """Single-line text for the pane's Path column."""
+        return _one_line(self.remedy)
+
+class StatusMessage:
+    """Show a status message while a block runs. Same idiom as fman's Core plugin."""
+    def __init__(self, message):
+        self._message = message
+
+    def __enter__(self):
+        show_status_message(self._message)
+
+    def __exit__(self, *_):
+        clear_status_message()
+
+def _is_placeholder(path):
+    """
+    True for the single non-result row iterdir() yields.
+
+    fman joins the yielded name onto the current directory, so the url is
+    'everything:///<search term>/placeholder' and `path` is '/<term>/placeholder'
+    - never the bare string. Comparing with == silently never matched, which is
+    why the raw word "placeholder" showed up in the pane instead of a message.
+    """
+    return path == 'placeholder' or path.endswith('/placeholder')
+
+# Everything's IPC can block forever rather than fail: with Everything running
+# elevated (or the Everything service stopped), WinDLL() loads fine but the first
+# IPC call - even Everything_GetMajorVersion() - never returns. No try/except can
+# catch that, so every DLL call goes through a thread we are willing to abandon.
+def _call_with_timeout(fn, secs):
+    box = {}
+    def run():
+        try:
+            box['ok'] = fn()
+        except BaseException as e:
+            box['err'] = e
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(secs)
+    if thread.is_alive():
+        # Deliberately abandoned. Joining again would hang us too.
+        raise Timeout()
+    if 'err' in box:
+        raise box['err']
+    return box['ok']
+
+# Once an IPC call has hung, the DLL stays wedged for the life of the process.
+# Without this flag every later search leaks another permanently blocked thread
+# and waits out the full timeout again.
+_dll_hung = False
+
+# Keep every message to a couple of short lines. fman themes can set a large font
+# and centre-align dialog text, so QMessageBox re-wraps at roughly 20 characters
+# no matter how the lines are written - a long message becomes a column taller than
+# the screen. Anything diagnostic belongs in the log, not here.
+
+# Everything_GetMajorVersion() returns 0 both when Everything is not running and
+# when it is running but its IPC is unreachable - the two are indistinguishable
+# from here, so the message covers both rather than guessing wrong.
+NOT_RUNNING_MSG = "Everything is not running, or fman cannot reach it."
+NOT_RUNNING_REMEDY = "Start Everything, then search again."
+HUNG_MSG = "Everything is running but fman cannot reach it."
+HUNG_REMEDY = "Start the Everything service, then restart fman."
+# Everything answers version queries but has no index loaded. Checking this is not
+# just cosmetic: a search issued in this state never returns, so the preflight turns
+# a 10-second hang into an instant message.
+INDEXING_MSG = "Everything has no index loaded."
+INDEXING_REMEDY = "Start the Everything service:\nsc start Everything"
+
+# Set when the DLL could not be loaded at all; a (headline, remedy) pair.
+DLL_LOAD_ERROR = None
+
 # Global variable to hold the DLL instance
 everything_dll = None
 
@@ -144,7 +271,10 @@ if SETTINGS['mode'] == 'dll':
         if not os.path.exists(dll_path):
             error_msg = f"DLL file not found at {dll_path}"
             logger.error(error_msg)
-            SETTINGS['mode'] = 'api'
+            DLL_LOAD_ERROR = (
+                "Everything DLL not found.",
+                "Check \"dll_path\" in settings.json."
+            )
         else:
             # Load the DLL
             everything_dll = ctypes.WinDLL(dll_path)
@@ -173,14 +303,32 @@ if SETTINGS['mode'] == 'dll':
             
             everything_dll.Everything_GetResultDateModified.argtypes = [DWORD, PULARGE_INTEGER]
             everything_dll.Everything_GetResultDateModified.restype = BOOL
-            
+
+            # Cheap preflight calls: distinguish "not running" and "still indexing"
+            # from a real search failure.
+            everything_dll.Everything_GetMajorVersion.argtypes = []
+            everything_dll.Everything_GetMajorVersion.restype = DWORD
+
+            everything_dll.Everything_IsDBLoaded.argtypes = []
+            everything_dll.Everything_IsDBLoaded.restype = BOOL
+
             logger.info("Successfully loaded Everything DLL API")
     except Exception as e:
         error_msg = f"Error loading Everything DLL: {str(e)}"
         logger.error(error_msg)
-        # Fallback to API mode if DLL loading fails
-        SETTINGS['mode'] = 'api'
-        logger.info("Falling back to API mode")
+        everything_dll = None
+        if getattr(e, 'winerror', None) == 193:
+            bits = 8 * ctypes.sizeof(ctypes.c_void_p)
+            wanted = 'Everything64.dll' if bits == 64 else 'Everything32.dll'
+            DLL_LOAD_ERROR = (
+                "Wrong Everything DLL bitness.",
+                f"fman is {bits}-bit - set \"dll_path\" to {wanted} in settings.json."
+            )
+        else:
+            DLL_LOAD_ERROR = (
+                "Everything DLL could not be loaded.",
+                "See fman_everything.log in your temp folder."
+            )
 
 # Singleton instance of EverythingFS
 _everything_fs_instance = None
@@ -339,6 +487,20 @@ def search_everything_dll(query):
         logger.error(error_msg, exc_info=True)
         raise Exception(error_msg)
 
+def _dll_probe_and_search(query):
+    """
+    Preflight then search, on the caller's thread. Runs inside _call_with_timeout,
+    so all three IPC calls share one timeout instead of needing three.
+
+    Raises:
+        SearchUnavailable: if Everything is not running or is still indexing
+    """
+    if not everything_dll.Everything_GetMajorVersion():
+        raise SearchUnavailable(NOT_RUNNING_MSG, NOT_RUNNING_REMEDY)
+    if not everything_dll.Everything_IsDBLoaded():
+        raise SearchUnavailable(INDEXING_MSG, INDEXING_REMEDY)
+    return search_everything_dll(query)
+
 def search_everything(query):
     """
     Search Everything using either the HTTP API or DLL API based on settings
@@ -353,15 +515,57 @@ def search_everything(query):
     Raises:
         Exception: If the search fails
     """
-    if SETTINGS['mode'] == 'dll':
+    global _dll_hung
+
+    if SETTINGS['mode'] != 'dll':
         try:
-            return search_everything_dll(query)
-        except Exception as e:
-            logger.error(f"DLL search failed: {str(e)}, falling back to API")
-            # Fallback to API if DLL search fails
             return search_everything_api(query)
+        except Exception as e:
+            raise SearchUnavailable(
+                "Everything API server unreachable.",
+                f"{SETTINGS['api_endpoint']} - {e}"
+            )
+
+    # Work out why the DLL path is unusable, if it is. None means "it worked".
+    dll_problem = None
+    if DLL_LOAD_ERROR:
+        dll_problem = DLL_LOAD_ERROR
+    elif everything_dll is None:
+        dll_problem = ("Everything DLL was not loaded.", f"See {log_file}")
+    elif _dll_hung:
+        dll_problem = (HUNG_MSG, HUNG_REMEDY)
     else:
+        try:
+            return _call_with_timeout(lambda: _dll_probe_and_search(query), 10)
+        except Timeout:
+            _dll_hung = True
+            logger.error("Everything DLL call timed out; disabling DLL mode")
+            dll_problem = (HUNG_MSG, HUNG_REMEDY)
+        except SearchUnavailable as e:
+            dll_problem = (e.headline, e.remedy)
+        except Exception as e:
+            dll_problem = ("Everything search failed.", str(e))
+
+    # The DLL is out. Fall back to the API - but say so, rather than reporting a
+    # localhost connection error for a problem that has nothing to do with it.
+    logger.error(f"DLL search unavailable ({dll_problem[0]}), falling back to API")
+    try:
         return search_everything_api(query)
+    except Exception as api_error:
+        # Full API error goes to the log only. Appending it to the dialog turns a
+        # readable message into a wall of text about a subsystem the user is
+        # probably not even using.
+        logger.error(f"API fallback also failed: {api_error}")
+        # The API fallback's own error stays in the log. Appending it to the dialog
+        # doubles the message length to describe a subsystem the user is usually
+        # not running, and pushes the actionable part off the screen.
+        raise SearchUnavailable(dll_problem[0], dll_problem[1])
+
+# Last term the user confirmed in the prompt, kept so a failed search (Everything
+# down, no results, too short) can be retried without retyping it. Preselected in
+# the next prompt, so Enter repeats it and Del/typing replaces it.
+# ponytail: process-local only; persist via save_json if it should survive restarts.
+_last_search_term = ''
 
 def _set_everything_path(pane_command):
     """
@@ -370,24 +574,46 @@ def _set_everything_path(pane_command):
     Args:
         pane_command: The DirectoryPaneCommand object.
     """
-    # Show prompt to enter search term
-    search_term, ok = show_prompt('Enter search term (minimum 3 characters)', default='')
+    global _last_search_term
+
+    # Show prompt to enter search term, prefilled with the previous one and fully
+    # selected.
+    search_term, ok = show_prompt(
+        'Enter search term (minimum 3 characters)', _last_search_term,
+        0, len(_last_search_term)
+    )
     
     # Check if user cancelled or entered a valid search term
     if not ok:
         logger.info("User cancelled search prompt")
         return  # User cancelled
     
+    _last_search_term = search_term
     logger.info(f"User entered search term: '{search_term}'")
     
     if len(search_term) < 3:
         logger.warning(f"Search term too short: '{search_term}'")
+        show_alert("Please enter at least 3 characters.")
         return
-    
+
+    # Search here, before navigating. This runs on fman's command thread, where
+    # blocking - and therefore a modal alert - is safe; iterdir() runs on the pane
+    # model, where it is not. On success the results are cached, so the iterdir()
+    # that follows set_path() is a pure cache read.
+    try:
+        with StatusMessage(f"Searching Everything for '{search_term}'..."):
+            count, results = get_everything_fs().update_search(search_term)
+    except SearchUnavailable as e:
+        show_alert(e.alert_text)
+        return
+    if not results:
+        show_alert(f"No files matching '{search_term}'.")
+        return
+
     # URL encode the search term to handle special characters like colons
     encoded_search_term = urllib.parse.quote(search_term)
     logger.info(f"Encoded search term: '{encoded_search_term}'")
-    
+
     # Set the path to our custom file system with the encoded search term as a parameter
     # Use a slash instead of a question mark
     pane_command.pane.set_path(f"everything:///{encoded_search_term}")
@@ -396,8 +622,6 @@ def _set_everything_path(pane_command):
 
 class Everything(DirectoryPaneCommand):
     def __call__(self):
-        # Show the log file path
-        log_file = os.path.join(tempfile.gettempdir(), 'fman_everything.log')
         logger.info("Everything plugin started")
         
         _set_everything_path(self)
@@ -410,6 +634,10 @@ class EverythingFS(FileSystem):
     _results_cache = {}  # Dictionary to store results with query as key
     _last_selected_file = None  # Store the last selected file
     _last_selected_index = 0
+    # (headline, remedy) for the placeholder row, or None. This is the whole user
+    # feedback channel: iterdir runs on the pane model, where a modal dialog would
+    # block it, so failures are rendered as the row's Name and Path cells instead.
+    _last_error = None
     
     def __init__(self):
         super().__init__()
@@ -417,6 +645,17 @@ class EverythingFS(FileSystem):
     def get_default_columns(self, path):
         return 'everything.Name', 'everything.Path', 'everything.Size', 'everything.DateModified'
     
+    def _safe_update_search(self, search_term):
+        """
+        update_search(), but never raising. iterdir() is driven by the pane model:
+        an exception escaping it becomes fman's generic "Plugin 'FMANEverything'
+        raised an error." Store the reason for the placeholder row instead.
+        """
+        try:
+            self.update_search(search_term)
+        except SearchUnavailable as e:
+            EverythingFS._last_error = (e.headline, e.cell_remedy)
+
     def iterdir(self, path):
         # Log the path
         logger.info(f"iterdir called with path: '{path}'")
@@ -429,7 +668,7 @@ class EverythingFS(FileSystem):
             # URL decode the search term
             search_term = urllib.parse.unquote(search_term)
             logger.info(f"Decoded search term: '{search_term}'")
-            self.update_search(search_term)
+            self._safe_update_search(search_term)
         # Then check for the new format with a slash
         elif path.count('/') >= 1:
             # Skip the first slash if it exists
@@ -447,18 +686,18 @@ class EverythingFS(FileSystem):
                     # URL decode the search term
                     search_term = urllib.parse.unquote(encoded_search_term)
                     logger.info(f"Decoded search term: '{search_term}'")
-                    self.update_search(search_term)
+                    self._safe_update_search(search_term)
             else:
                 encoded_search_term = path
                 logger.info(f"Extracted encoded search term (new format without leading slash): '{encoded_search_term}' from path")
                 # URL decode the search term
                 search_term = urllib.parse.unquote(encoded_search_term)
                 logger.info(f"Decoded search term: '{search_term}'")
-                self.update_search(search_term)
+                self._safe_update_search(search_term)
         else:
             # Default to empty search
             logger.info("No search term in path, using empty search")
-            self.update_search("")
+            self._safe_update_search("")
         
         # If search term is too short, show placeholder message
         if len(EverythingFS._current_search_term) < 3:
@@ -488,41 +727,51 @@ class EverythingFS(FileSystem):
             # Check if we already have results for this search term
             if search_term in EverythingFS._results_cache:
                 logger.info(f"Using cached results for '{search_term}'")
-                return
+                EverythingFS._last_error = None
+                return EverythingFS._results_cache[search_term]
             
             try:
                 # Debug: Log that we're performing the search
                 logger.info(f"Performing search with query: '{search_term}'")
-                
+
                 # Perform the search
                 count, results = search_everything(search_term)
-                
-                # Store in cache
-                EverythingFS._results_cache[search_term] = (count, results)
-                
-                # Debug: Log search results
-                logger.info(f"Cached results for '{search_term}': {count} items")
-                # Log the count of cached results
-                
+
                 # Limit the number of results to 100 for performance
                 if len(results) > 100:
                     results = results[:100]
-                    EverythingFS._results_cache[search_term] = (count, results)
                     logger.info(f"Limited to 100 results")
-            except Exception as e:
-                # Handle API errors
-                error_msg = f"Search error: {str(e)}"
-                logger.error(error_msg)
-                # Clear cache for this search term
+
+                if results:
+                    # Never cache an empty result set: a search run while Everything
+                    # was still indexing would otherwise keep returning nothing for
+                    # the rest of the process.
+                    if len(EverythingFS._results_cache) > 20:
+                        EverythingFS._results_cache.clear()
+                    EverythingFS._results_cache[search_term] = (count, results)
+                    EverythingFS._last_error = None
+                    logger.info(f"Cached results for '{search_term}': {count} items")
+                else:
+                    # A successful search that matched nothing is not an error, and
+                    # must not look like one.
+                    EverythingFS._last_error = (
+                        f"No files matching '{search_term}'.", ""
+                    )
+                    logger.info(f"No results for '{search_term}'")
+                return count, results
+            except SearchUnavailable as e:
+                logger.error(f"Search unavailable: {e.headline} {e.remedy}")
+                # Not cached, so fixing Everything and searching again just works.
                 if search_term in EverythingFS._results_cache:
                     del EverythingFS._results_cache[search_term]
+                raise
         else:
             # If search term is too short or empty, clear current search term
             logger.debug(f"Search term too short, not updating cache")
     
     def resolve(self, path):
         # Handle placeholder item
-        if path == 'placeholder':
+        if _is_placeholder(path):
             return self.scheme + path
         
         # Extract the index from the path
@@ -544,7 +793,7 @@ class EverythingFS(FileSystem):
     @cached
     def is_dir(self, path):
         # Handle placeholder item
-        if path == 'placeholder':
+        if _is_placeholder(path):
             return False
         
         # Check if the path is a directory
@@ -587,7 +836,9 @@ class Name(Column):
         
         if scheme == 'everything://':
             # Handle placeholder item
-            if path == 'placeholder':
+            if _is_placeholder(path):
+                if EverythingFS._last_error:
+                    return EverythingFS._last_error[0]
                 return "Search using 'Everything' from the command palette"
             
             if '/' in path:
@@ -628,9 +879,11 @@ class Path(Column):
         
         if scheme == 'everything://':
             # Handle placeholder item
-            if path == 'placeholder':
+            if _is_placeholder(path):
+                if EverythingFS._last_error:
+                    return EverythingFS._last_error[1]
                 return ""
-            
+
             index:int = 0
             if '/' in path:
                 # More general extraction
@@ -670,7 +923,7 @@ class Size(Column):
         
         if scheme == 'everything://':
             # Handle placeholder item
-            if path == 'placeholder':
+            if _is_placeholder(path):
                 return ""
             
             # Extract the index from the path
@@ -726,7 +979,7 @@ class DateModified(Column):
         
         if scheme == 'everything://':
             # Handle placeholder item
-            if path == 'placeholder':
+            if _is_placeholder(path):
                 return ""
             
             # Extract the index from the path
@@ -791,7 +1044,7 @@ class EverythingOpenListener(DirectoryPaneListener):
             return
         
         # Handle placeholder item
-        if path == 'placeholder':
+        if _is_placeholder(path):
             return
         
         # Extract the index from the path
@@ -840,7 +1093,7 @@ class EverythingOpenListener(DirectoryPaneListener):
                 scheme, path = splitscheme(url)
                 if scheme == 'everything://':
                     # Handle placeholder item
-                    if path == 'placeholder' or path == '/placeholder':
+                    if _is_placeholder(path):
                         _set_everything_path(self)
                         return
                     
