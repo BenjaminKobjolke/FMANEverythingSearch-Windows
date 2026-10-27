@@ -1,0 +1,12 @@
+/.git/
+/__pycache__/
+/tickets/
+/tmp/
+*.md
+*.json
+*.dll
+LICENSE
+tools/
+.claude/
+claude-plans/
+graphify-out/
