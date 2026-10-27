@@ -1,9 +1,11 @@
 {
   "analysis_commands": [
-    "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\""
+    "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\"",
+    "cmd /c tools\\analyze_changed_and_new_files.bat"
   ],
   "analysis_command_kinds": {
-    "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\"": "test"
+    "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\"": "test",
+    "cmd /c tools\\analyze_changed_and_new_files.bat": "code_quality"
   },
   "analysis_commands_seen": {
     "scripts": [
@@ -16,6 +18,9 @@
   "analysis_command_states": {
     "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\"": {
       "test": "green"
+    },
+    "cmd /c tools\\analyze_changed_and_new_files.bat": {
+      "code_quality": "green"
     }
   }
 }

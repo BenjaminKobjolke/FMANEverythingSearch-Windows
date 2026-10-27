@@ -34,3 +34,30 @@ they are intentionally referenced, not imported.
 # graphify
 
 This project's code directory is `.` (flat layout: `everything/` and `check_everything.py` in the root). The root `.graphifyignore` keeps non-code files out of the graph.
+
+## Post-Implementation Code Analysis
+
+After **any** of the following events, run the changed-file analyzer and fix every reported issue before considering the work complete:
+
+- A new feature has been implemented
+- A plan has been finished
+- A bug has been fixed
+
+### Changed-files run
+
+```powershell
+cmd /c tools\analyze_changed_and_new_files.bat
+```
+
+This uses `--only-changed` to report issues in source files that are new or modified against Git `HEAD`, including untracked files and excluding deletions.
+
+### Full run
+
+Run `tools\analyze_code.bat` for an explicit whole-project audit, exception maintenance, before a release or merge, after a refactor that touches shared code, or when the working tree is clean against `HEAD`.
+
+### Workflow
+
+1. Run the appropriate batch file.
+2. Read the per-rule CSV reports under `code_analysis_results/`; a missing CSV means that rule found no issues.
+3. Fix every warning and error that applies to the changes.
+4. Re-run until the analyzer exits successfully. The results cache self-invalidates when source files change.
