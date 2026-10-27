@@ -1,5 +1,10 @@
 {
-  "analysis_commands": [],
+  "analysis_commands": [
+    "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\""
+  ],
+  "analysis_command_kinds": {
+    "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\"": "test"
+  },
   "analysis_commands_seen": {
     "scripts": [
       "graphify_update.bat"
@@ -7,5 +12,10 @@
     "tests": false
   },
   "analysis_tests_answered": true,
-  "analysis_code_quality_answered": true
+  "analysis_code_quality_answered": true,
+  "analysis_command_states": {
+    "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\"": {
+      "test": "green"
+    }
+  }
 }
