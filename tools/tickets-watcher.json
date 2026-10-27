@@ -1,0 +1,11 @@
+{
+  "analysis_commands": [],
+  "analysis_commands_seen": {
+    "scripts": [
+      "graphify_update.bat"
+    ],
+    "tests": false
+  },
+  "analysis_tests_answered": true,
+  "analysis_code_quality_answered": true
+}
