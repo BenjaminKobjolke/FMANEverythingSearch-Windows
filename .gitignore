@@ -185,4 +185,5 @@ tickets/
 claude-plans/
 graphify-out/
 code_analysis_results/
+tools/analyze_code_config.bat
 .reasonix/
