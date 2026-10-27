@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "COMMON_RULES.md": 14,
+    "PYTHON_RULES.md": 9,
+    "implementation_flow_addons/graphify.md": 15,
+    "IMPLEMENTATION_FLOW.md": 25,
+    "implementation_flow_addons/graphify_flow.md": 2
+  },
+  "delegation": "codex",
+  "pointerVersion": 3,
+  "pluginRoot": "C:\\Users\\XIDA\\.claude\\plugins\\cache\\claude-coding-rules\\coding-rules\\1.11.1"
+}
