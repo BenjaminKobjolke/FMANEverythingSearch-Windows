@@ -1,7 +1,8 @@
 {
   "analysis_commands": [
     "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\"",
-    "cmd /c tools\\analyze_changed_and_new_files.bat"
+    "cmd /c tools\\analyze_changed_and_new_files.bat",
+    "tools\\analyze_code.bat"
   ],
   "analysis_command_kinds": {
     "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\"": "test",
@@ -9,6 +10,11 @@
   },
   "analysis_commands_seen": {
     "scripts": [
+      "analyze_changed_and_new_files.bat",
+      "analyze_code.bat",
+      "analyze_code_config.bat",
+      "analyze_code_config.example.bat",
+      "fix_ruff_issues.bat",
       "graphify_update.bat"
     ],
     "tests": false
@@ -22,5 +28,16 @@
     "cmd /c tools\\analyze_changed_and_new_files.bat": {
       "code_quality": "green"
     }
-  }
+  },
+  "files": {
+    "TICKETS_WATCHER_COMMANDS.md": 3
+  },
+  "command_check_scripts": [
+    "analyze_changed_and_new_files.bat",
+    "analyze_code.bat",
+    "analyze_code_config.bat",
+    "analyze_code_config.example.bat",
+    "fix_ruff_issues.bat",
+    "graphify_update.bat"
+  ]
 }
