@@ -87,7 +87,7 @@ def read_settings():
                 
                 logger.info(f"Settings loaded: {settings}")
             else:
-                logger.info(f"Settings file not found, using defaults")
+                logger.info("Settings file not found, using defaults")
     except Exception as e:
         logger.error(f"Error reading settings: {str(e)}")
         logger.info("Using default settings")
@@ -740,7 +740,7 @@ class EverythingFS(FileSystem):
                 # Limit the number of results to 100 for performance
                 if len(results) > 100:
                     results = results[:100]
-                    logger.info(f"Limited to 100 results")
+                    logger.info("Limited to 100 results")
 
                 if results:
                     # Never cache an empty result set: a search run while Everything
@@ -767,7 +767,7 @@ class EverythingFS(FileSystem):
                 raise
         else:
             # If search term is too short or empty, clear current search term
-            logger.debug(f"Search term too short, not updating cache")
+            logger.debug("Search term too short, not updating cache")
     
     def resolve(self, path):
         # Handle placeholder item
