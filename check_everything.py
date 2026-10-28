@@ -7,6 +7,7 @@ Deliberately not a pytest suite: this plugin has no test deps, and the one thing
 that genuinely needs pinning is that a hung Everything IPC call is abandoned
 rather than joined.
 """
+import os
 import sys
 import time
 import types
@@ -40,7 +41,7 @@ def _stub_fman():
 
 def main():
     _stub_fman()
-    sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import everything as e
 
     # 1. A call that never returns must be abandoned, not joined. If this
