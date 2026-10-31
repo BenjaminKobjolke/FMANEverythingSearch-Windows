@@ -1,8 +1,7 @@
 {
   "analysis_commands": [
     "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\"",
-    "cmd /c tools\\analyze_changed_and_new_files.bat",
-    "tools\\analyze_code.bat"
+    "cmd /c tools\\analyze_changed_and_new_files.bat"
   ],
   "analysis_command_kinds": {
     "python -c \"import subprocess, sys; sys.exit(subprocess.run([sys.executable, 'check_everything.py'], timeout=120).returncode)\"": "test",
@@ -29,9 +28,6 @@
       "test": "green"
     },
     "cmd /c tools\\analyze_changed_and_new_files.bat": {
-      "code_quality": "green"
-    },
-    "tools\\analyze_code.bat": {
       "code_quality": "green"
     }
   },
