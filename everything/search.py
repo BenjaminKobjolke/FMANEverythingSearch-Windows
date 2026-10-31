@@ -13,6 +13,11 @@ from .core import (
 )
 from .settings import SETTINGS, logger, log_file
 
+# Once an IPC call has hung, the DLL stays wedged for the life of the process.
+# Without this flag every later search leaks another permanently blocked thread
+# and waits out the full timeout again.
+_dll_hung = False
+
 def search_everything_api(query):
     """
     Search Everything using the HTTP API

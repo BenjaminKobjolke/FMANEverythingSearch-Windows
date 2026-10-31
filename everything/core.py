@@ -139,11 +139,6 @@ def _call_with_timeout(fn, secs):
         raise box['err']
     return box['ok']
 
-# Once an IPC call has hung, the DLL stays wedged for the life of the process.
-# Without this flag every later search leaks another permanently blocked thread
-# and waits out the full timeout again.
-_dll_hung = False
-
 # Keep every message to a couple of short lines. fman themes can set a large font
 # and centre-align dialog text, so QMessageBox re-wraps at roughly 20 characters
 # no matter how the lines are written - a long message becomes a column taller than
