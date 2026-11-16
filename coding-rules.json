@@ -1,6 +1,6 @@
 {
   "rules": {
-    "COMMON_RULES.md": 15,
+    "COMMON_RULES.md": 19,
     "PYTHON_RULES.md": 9,
     "implementation_flow_addons/graphify.md": 15,
     "IMPLEMENTATION_FLOW.md": 25,
