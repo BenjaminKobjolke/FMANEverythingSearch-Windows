@@ -24,8 +24,8 @@ class EverythingFS(FileSystem):
 
     def get_default_columns(self, path):
         return (
-            'everything.Name', 'everything.Path', 'everything.Size',
-            'everything.DateModified'
+            'everything.columns.Name', 'everything.columns.Path',
+            'everything.columns.Size', 'everything.columns.DateModified'
         )
 
     def _safe_update_search(self, search_term):
